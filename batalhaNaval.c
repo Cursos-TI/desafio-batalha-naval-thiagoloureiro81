@@ -1,7 +1,6 @@
 
- // Batalha Naval
+//Batalha Naval - Nivel Aventureiro
  
-
 #include <stdio.h>
 #include <stdbool.h>
 
@@ -134,6 +133,7 @@ int main(void) {
     /* ===============================
      *  COORDENADAS FIXAS DOS 4 NAVIOS
      *  - Tamanho de cada navio = 3
+     *  - Ajuste aqui se desejar
      * =============================== */
 
     // 1) Horizontal (para a direita) a partir de (1,2): (1,2), (1,3), (1,4)
