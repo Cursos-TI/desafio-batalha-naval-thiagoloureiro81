@@ -1,13 +1,17 @@
+// Batalha Naval - Nivel Novato + Aventureiro + Mestre
 
-//Batalha Naval - Nivel Aventureiro
- 
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h> // abs()
 
 #define BOARD_SIZE 10
 #define SHIP_SIZE  3
 #define WATER      0
 #define SHIP       3
+#define AOE        5   // valor para area de habilidade
+
+// Tamanho da mascara de habilidade (usar impar)
+#define MASK_N     5
 
 /* Orientacoes suportadas:
  * ORIENT_H   -> horizontal (para a direita)
@@ -58,7 +62,7 @@ static void print_board(const int board[BOARD_SIZE][BOARD_SIZE]) {
     for (int r = 0; r < BOARD_SIZE; r++) {
         printf("%2d |", r);
         for (int c = 0; c < BOARD_SIZE; c++) {
-            printf(" %d ", board[r][c]);
+            printf(" %d ", board[r][c]); // 0=agua, 3=navio, 5=habilidade
         }
         printf("\n");
     }
@@ -126,6 +130,95 @@ static bool try_place_ship(int board[BOARD_SIZE][BOARD_SIZE], Ship s) {
     return true;
 }
 
+/* =========================
+ * HABILIDADES (MESTRE)
+ * =========================
+ * - Mascaras 5x5 construidas dinamicamente com condicionais
+ * - Sobreposicao com ancora (centro ou topo, conforme a forma)
+ */
+
+static void clear_mask(int mask[MASK_N][MASK_N]) {
+    for (int r = 0; r < MASK_N; r++)
+        for (int c = 0; c < MASK_N; c++)
+            mask[r][c] = 0;
+}
+
+/* Cone apontando para baixo:
+ * - Apice no topo da mascara: ancora = (0, center)
+ * - Largura cresce a cada linha (triangulo isosceles)
+ */
+static void build_cone_mask(int mask[MASK_N][MASK_N], int *anchor_r, int *anchor_c) {
+    clear_mask(mask);
+    int center = MASK_N / 2;
+    for (int r = 0; r < MASK_N; r++) {
+        int w = r;
+        if (w > center) w = center;
+        int left  = center - w;
+        int right = center + w;
+        for (int c = 0; c < MASK_N; c++) {
+            mask[r][c] = (c >= left && c <= right) ? 1 : 0;
+        }
+    }
+    *anchor_r = 0;
+    *anchor_c = center;
+}
+
+/* Cruz:
+ * - Ancora no centro
+ * - Marca linha central e coluna central
+ */
+static void build_cross_mask(int mask[MASK_N][MASK_N], int *anchor_r, int *anchor_c) {
+    clear_mask(mask);
+    int center = MASK_N / 2;
+    for (int i = 0; i < MASK_N; i++) {
+        mask[center][i] = 1;
+        mask[i][center] = 1;
+    }
+    *anchor_r = center;
+    *anchor_c = center;
+}
+
+/* Losango (octaedro - vista frontal):
+ * - Ancora no centro
+ * - Distancia de Manhattan <= center
+ */
+static void build_diamond_mask(int mask[MASK_N][MASK_N], int *anchor_r, int *anchor_c) {
+    clear_mask(mask);
+    int center = MASK_N / 2;
+    for (int r = 0; r < MASK_N; r++) {
+        for (int c = 0; c < MASK_N; c++) {
+            int dr = abs(r - center);
+            int dc = abs(c - center);
+            mask[r][c] = (dr + dc <= center) ? 1 : 0;
+        }
+    }
+    *anchor_r = center;
+    *anchor_c = center;
+}
+
+/* Sobrepoe mascara no tabuleiro:
+ * - origin_r/origin_c: ponto-alvo no tabuleiro
+ * - anchor_r/anchor_c: posicao da ancora na mascara (p.ex., centro ou topo)
+ * - Marca AOE (5). Se quiser nao sobrescrever navio, troque a linha marcada.
+ */
+static void overlay_mask_on_board(int board[BOARD_SIZE][BOARD_SIZE],
+                                  const int mask[MASK_N][MASK_N],
+                                  int origin_r, int origin_c,
+                                  int anchor_r, int anchor_c) {
+    for (int r = 0; r < MASK_N; r++) {
+        for (int c = 0; c < MASK_N; c++) {
+            if (mask[r][c] == 0) continue;
+            int br = origin_r + (r - anchor_r);
+            int bc = origin_c + (c - anchor_c);
+            if (!within_bounds(br, bc)) continue;
+
+            board[br][bc] = AOE;
+            // Para preservar navio visivel, use:
+            // if (board[br][bc] != SHIP) board[br][bc] = AOE;
+        }
+    }
+}
+
 int main(void) {
     int board[BOARD_SIZE][BOARD_SIZE];
     init_board(board);
@@ -166,8 +259,34 @@ int main(void) {
         return 1;
     }
 
-    /* Impressao do resultado */
-    printf("TABULEIRO 10x10 (0 = agua, 3 = navio):\n");
+    /* ===============================
+     *  HABILIDADES (Mascaras 5x5)
+     * =============================== */
+    int cone[MASK_N][MASK_N];
+    int cross[MASK_N][MASK_N];
+    int diamond[MASK_N][MASK_N];
+    int anch_r, anch_c;
+
+    // Cone -> ancora no APICE (topo)
+    build_cone_mask(cone, &anch_r, &anch_c);
+    overlay_mask_on_board(board, cone,
+                          /* origem no tabuleiro */ 3, 5,
+                          /* ancora da mascara  */  anch_r, anch_c);
+
+    // Cruz -> ancora no CENTRO
+    build_cross_mask(cross, &anch_r, &anch_c);
+    overlay_mask_on_board(board, cross,
+                          6, 2,
+                          anch_r, anch_c);
+
+    // Losango -> ancora no CENTRO
+    build_diamond_mask(diamond, &anch_r, &anch_c);
+    overlay_mask_on_board(board, diamond,
+                          6, 7,
+                          anch_r, anch_c);
+
+    /* Impressao do resultado final (0=agua, 3=navio, 5=habilidade) */
+    printf("TABULEIRO 10x10 (0 = agua, 3 = navio, 5 = habilidade):\n");
     print_board(board);
 
     return 0;
